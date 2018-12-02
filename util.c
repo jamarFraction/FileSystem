@@ -5,8 +5,9 @@
 #include <string.h>
 #include <libgen.h>
 #include <sys/stat.h>
-
 #include "type.h"
+
+
 
 /**** globals defined in main.c file ****/
 
@@ -81,19 +82,49 @@ int ialloc(int dev)
 {
     int i;
     char buf[BLKSIZE];
-    // use imap, ninodes in mount table of dev
-    MOUNT *mp = (MOUNT *)get_mtable(dev);
-    get_block(dev, mp->imap, buf);
-    for (i=0; i<mp->ninodes; i++){
-        if (tst_bit(buf, i)==0){
+
+    // read inode_bitmap block
+    get_block(dev, imap, buf);
+
+    for (i = 0; i < ninodes; i++)
+    {
+        if (tst_bit(buf, i) == 0)
+        {
             set_bit(buf, i);
-            put_block(dev, mp->imap, buf);
-            // update free inode count in SUPER and GD
             decFreeInodes(dev);
-            return (i+1);
+
+            put_block(dev, imap, buf);
+
+            return i + 1;
         }
     }
-    return 0; // out of FREE inodes
+    printf("ialloc(): no more free inodes\n");
+    return 0;
+}
+
+int balloc(int dev)
+{
+
+    int i;
+    char buf[BLKSIZE];
+
+    // read inode_bitmap block
+    get_block(dev, bmap, buf);
+
+    for (i = 0; i < ninodes; i++)
+    {
+        if (tst_bit(buf, i) == 0)
+        {
+            set_bit(buf, i);
+            decFreeInodes(dev);
+
+            put_block(dev, bmap, buf);
+
+            return i + 1;
+        }
+    }
+    printf("balloc(): no more free blocks\n");
+    return 0;
 }
 
 MINODE *iget(int dev, int ino)

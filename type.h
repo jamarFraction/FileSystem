@@ -7,6 +7,8 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#define EXT2_SUPER_MAGIC	0xEF53
+
 typedef unsigned char  u8;
 typedef unsigned short u16;
 typedef unsigned int   u32;

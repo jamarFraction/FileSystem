@@ -231,28 +231,65 @@ int rpwd(MINODE *wd) {
 }
 
 int make_dir(char *pathname) {
+    
     char temp[1024];
     char *parentname;
     char *base;
     int ino = 0;
 
-    MINODE *mip;
+    MINODE *mip, *pino, *pip;
+
+    //check for no pathname
+    if(strlen(pathname) == 0){
+        printf("No specified pathname!\n");
+        return 0;
+    }
 
     strcpy(temp, pathname);
 
     parentname = dirname(pathname);
     base = basename(temp);
 
+    if(strcmp(&parentname[0], ".") ==0){
+
+        //parentname should be the cwd
+        parentname = cwd;
+    }
+
     if(!(ino = getino(pathname))) {
-        printf("Pathname is invalid.\n");
+        printf("Pathname is invalid!\n");
         return 0;
     }
 
-    mip = iget(dev, ino);
+    pino = getino(parentname);
 
-    if(!S_ISDIR(mip->INODE.i_mode)) {
-        
+    pip = iget(dev, pino);
+
+    if(!S_ISDIR(pip->INODE.i_mode)) {
+
+        printf("%s is not a directory!\n", parentname);
+        return 0;
     }
+
+    printf("yay, it's a directory!\n");
+
+    //check that the basename does not already exist in the directory
+    if(getino(pathname) != 0){
+        printf("%s already exists!\n");
+    }
+
+    mymkdir(pip, basename);
+
+}
+
+int mymkdir(MINODE *pip, char *name)
+{
+
+    int ino, block;
+
+    ino = ialloc(dev);    
+    block = balloc(dev);
+
 
 }
 
@@ -307,6 +344,12 @@ int main(int argc, char *argv[]) {
         }
         else if(strcmp(cmd, "pwd") == 0) {
             pwd(running->cwd);
+        }
+        else if(strcmp(cmd, "mkdir") == 0){
+
+            make_dir(pathname);
+
+
         }
         else if(strcmp(cmd, "quit") == 0) {
             quit();
