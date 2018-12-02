@@ -230,6 +230,13 @@ int rpwd(MINODE *wd) {
     rpwd(pip);
 }
 
+int enter_name(MINODE *pip, int myino, char *myname)
+{
+
+
+
+}
+
 int make_dir(char *pathname) {
     
     char temp[1024];
@@ -286,11 +293,66 @@ int mymkdir(MINODE *pip, char *name)
 {
 
     int ino, block;
+    MINODE *mip;
+    char *cp, buf[BLKSIZE];
 
-    ino = ialloc(dev);    
+    ino = ialloc(dev);
     block = balloc(dev);
 
 
+
+    mip = iget(dev, ino);
+    INODE *ip = &mip->INODE;
+    //Use ip->to acess the INODE fields :
+
+    ip->i_mode = 0x41ED;                    // OR 040755: DIR type and permissions
+    ip->i_uid = running->uid;                   // Owner uid
+    ip->i_gid = running->gid;                   // Group Id
+    ip->i_size = BLKSIZE;                       // Size in bytes
+    ip->i_links_count = 2;                      // Links count=2 because of . and ..
+    ip->i_atime = time(0L);                     // set to current time
+    ip->i_ctime = time(0L);
+    ip->i_mtime = time(0L); 
+    ip->i_blocks = 2;                           // LINUX: Blocks count in 512-byte chunks
+    ip->i_block[0] = block;                     // new DIR has one data block
+
+    //setting blocks [1-14]
+    for (int i = 1; i < 15; i++)
+    {
+
+        ip->i_block[i] = 0;
+    }
+
+    mip->dirty = 1; // mark minode dirty
+    iput(mip);      // write INODE to disk
+
+    //data block for . and ..
+    get_block(running->cwd->dev, block, buf);
+
+    cp = buf;
+    dp = (DIR *)cp;
+
+    //write . and ..
+    dp->inode = ino;
+    dp->rec_len = 4 * ((8 + 1 + 3) / 4); //ideal length
+    dp->name_len = 1;
+    strcpy(dp->name, ".");
+
+    cp += dp->rec_len;
+    dp = (DIR *)cp;
+
+    dp->inode = pip->ino;
+    dp->rec_len = BLKSIZE - 12;
+    dp->name_len = 2;
+    strcpy(dp->name, "..");
+
+    //write block
+    put_block(running->cwd->dev, block, buf);
+
+    enterName(pip, ino, name);
+
+    //successful
+    return 0;
 }
 
 int dir_alloc() {
