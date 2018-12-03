@@ -9,6 +9,7 @@
 
 
 
+
 /**** globals defined in main.c file ****/
 
 MINODE minode[NMINODE];
@@ -21,7 +22,7 @@ char *name[64]; // assume at most 64 components in pathnames
 int  n;
 
 int  fd, dev;
-int  nblocks, ninodes, bmap, imap, inode_start;
+int  nblocks, ninodes, bmap, imap, inode_start, iblk, freeinodes, freeblocks;
 char line[256], cmd[32], pathname[256];
 char cwd[256];
 
@@ -134,29 +135,33 @@ MINODE *iget(int dev, int ino)
 
     int blk, offset;
     char buf[BLKSIZE];
-//   // return minode pointer to loaded INODE
-//   (1). Search minode[ ] for an existing entry (refCount > 0) with 
-//        the needed (dev, ino):
-//        if found: inc its refCount by 1;
-//                  return pointer to this minode;
+    //   // return minode pointer to loaded INODE
+    //   (1). Search minode[ ] for an existing entry (refCount > 0) with
+    //        the needed (dev, ino):
+    //        if found: inc its refCount by 1;
+    //                  return pointer to this minode;
 
-    for(int i = 0; i < NMINODE; i++) {
+    for (int i = 0; i < NMINODE; i++)
+    {
         mip = &minode[i];
 
-        if(mip->refCount && (mip->dev == dev) && (mip->ino == ino)) {
+        if (mip->refCount && (mip->dev == dev) && (mip->ino == ino))
+        {
             mip->refCount++;
             return mip;
         }
     }
 
-//   (2). // needed entry not in memory:
-//        find a FREE minode (refCount = 0); Let mip-> to this minode;
-//        set its refCount = 1;
-//        set its dev, ino
-    for(int i = 0; i < NMINODE; i++) {
+    //   (2). // needed entry not in memory:
+    //        find a FREE minode (refCount = 0); Let mip-> to this minode;
+    //        set its refCount = 1;
+    //        set its dev, ino
+    for (int i = 0; i < NMINODE; i++)
+    {
         mip = &minode[i];
 
-        if(mip->refCount == 0) {
+        if (mip->refCount == 0)
+        {
             mip->refCount = 1;
             break;
         }
@@ -166,44 +171,55 @@ MINODE *iget(int dev, int ino)
     mip->refCount = 1;
     mip->dirty = 0;
 
-//   (3). load INODE of (dev, ino) into mip->INODE:
-       
-    // get INODE of ino a char buf[BLKSIZE]    
-    blk    = (ino-1) / 8 + inode_start;
-    offset = (ino-1) % 8;
+    //   (3). load INODE of (dev, ino) into mip->INODE:
+
+    // get INODE of ino a char buf[BLKSIZE]
+    blk = (ino - 1) / 8 + inode_start;
+    offset = (ino - 1) % 8;
 
     printf("iget: ino=%d blk=%d offset=%d\n", ino, blk, offset);
 
     get_block(dev, blk, buf);
     ip = (INODE *)buf + offset;
-    mip->INODE = *ip;  // copy INODE to mp->INODE
+    mip->INODE = *ip; // copy INODE to mp->INODE
 
     return mip;
 }
 
-
 int iput(MINODE *mip) // dispose a used minode by mip
 {
-    INODE *ip;
+    int ino = 0;
+    int offset, ipos;
+    char buf[1024];
 
-    int blk, offset;
-    char buf[BLKSIZE];
+    ino = mip->ino;
+
+    //decrement refCount by 1
     mip->refCount--;
-    
-    if (mip->refCount > 0) return;
-    if (!mip->dirty)       return;
-    
-    // Write YOUR CODE to write mip->INODE back to disk
-    blk    = (mip->ino-1) / 8 + inode_start;
-    
-    offset = (mip->ino-1) % 8;
-    get_block(mip->dev, blk, buf);
-    ip = (INODE *) buf + offset;
-    *ip= mip->INODE;
-    put_block(mip->dev, blk, buf);
-    mip->refCount = 0;
-}
 
+    //check refcount to see if anyone using it
+    //check dirty to see if it's been changed, dirty == 1 if changed
+    //if refCount > 0 or dirty return
+    if (mip->refCount == 0 && mip->dirty == 0)
+    {
+        return;
+    }
+
+    //mail man's to determine disk block and which inode in that block
+    ipos = (ino - 1) / 8 + INODE_START_POS;
+    offset = (ino - 1) % 8;
+
+    //read that block in
+    get_block(mip->dev, ipos, buf);
+
+    //copy minode's inode into the inode area in that block
+    ip = (INODE *)buf + offset;
+    *ip = mip->INODE;
+
+    //write block back to disk
+    put_block(mip->dev, ipos, buf);
+    mip->dirty = 0;
+}
 
 // serach a DIRectory INODE for entry with a given name
 int search(MINODE *mip, char *name)
@@ -281,11 +297,50 @@ int getino(char *pathname)
 // THESE two functions are for pwd(running->cwd), which prints the absolute
 // pathname of CWD. 
 
-int findmyname(MINODE *parent, u32 myino, char *myname) 
+int findmyname(MINODE *mip, int ino, char *filename) 
 {
-   // parent -> at a DIR minode, find myname by myino
-   // get name string of myino: SAME as search except by myino;
-   // copy entry name (string) into myname[ ];
+	int i = 0;
+	char ibuf[1024];
+	INODE inode = mip->INODE;
+	
+	//Check for if the supplied inode is a directory
+	if(inode.i_mode == 16877)
+	{
+		//Access every data block that this directory contains
+		for(i; i<12; i++)
+		{
+			//Use this INODE to find the data block number
+			u32 iblock = inode.i_block[i];
+			
+			if(iblock) //If the block number is 0, that block does not exist
+			{
+				//Read in the block and print the directory listing
+				get_block(mip->dev, iblock, ibuf);
+				
+				char * cp = ibuf; //Character pointer to hold the current position within the block
+				DIR * dp = (DIR *)ibuf;
+				
+				while(cp < &ibuf[BLKSIZE])
+				{
+					//If this is the inode we're looking for
+					if(dp->inode == ino)
+					{
+						strcpy(filename, dp->name); //Copy the name
+						return 1;
+					}
+					
+					//Increment cp and set dp to the next file in the directory
+					cp += dp->rec_len;
+					dp = (DIR *)cp;
+				}
+			}
+		}
+		
+		return 0;
+	}
+	
+	printf("The file supplied was not a directory\n");
+	return 0;
 }
 
 

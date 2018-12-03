@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 
 #define EXT2_SUPER_MAGIC	0xEF53
+#define INODE_START_POS 10
 
 typedef unsigned char  u8;
 typedef unsigned short u16;
